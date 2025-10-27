@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Calendário de Serviço</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #f5f5f5;
+    padding: 20px;
+  }
+
+  h1 {
+    text-align: center;
+  }
+
+  .config {
+    text-align: center;
+    margin-bottom: 20px;
+  }
+
+  .calendar {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 8px;
+    max-width: 600px;
+    margin: 20px auto;
+  }
+
+  .day {
+    background: white;
+    border: 1px solid #ccc;
+    text-align: center;
+    padding: 15px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.3s;
+  }
+
+  .day.service { background: #ffe0e0; }
+  .day.good { background: #a8f0a5 !important; border-color: #007f00 !important; }
+  .day.bad { background: #ff8b8b !important; border-color: #b00000 !important; }
+  .day.today { border: 2px solid #007bff; }
+
+  .details {
+    text-align: center;
+    margin-top: 20px;
+    background: #fff;
+    padding: 20px;
+    border-radius: 8px;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  textarea {
+    width: 80%;
+    height: 80px;
+    margin-top: 10px;
+  }
+
+  button {
+    margin: 8px;
+    padding: 8px 15px;
+    cursor: pointer;
+  }
+
+  .info-box {
+    background: #fff7c2;
+    padding: 10px;
+    border-radius: 8px;
+    text-align: center;
+    max-width: 500px;
+    margin: 0 auto 10px;
+  }
+
+  .resumo {
+    text-align: center;
+    margin-top: 20px;
+    font-weight: bold;
+    background: #fff;
+    padding: 10px;
+    border-radius: 8px;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  .meta-ok { color: green; font-weight: bold; }
+  .meta-pendente { color: #c00; font-weight: bold; }
+</style>
+</head>
+<body>
+
+<h1>📅 Calendário de Serviço</h1>
+
+<div class="config">
+  <label>Cliente:</label>
+  <input type="text" id="cliente" placeholder="Nome do cliente"><br>
+  <label>Valor Total (R$):</label>
+  <input type="number" id="valorTotal" placeholder="6000"><br>
+  <label>Data de início:</label>
+  <input type="date" id="inicio"><br>
+  <button onclick="gerarCalendario()">Gerar Calendário</button>
+</div>
+
+<div id="infoCliente" class="info-box" style="display:none;"></div>
+
+<div id="calendar" class="calendar"></div>
+
+<div id="details" class="details" style="display:none;">
+  <h3 id="dataSelecionada"></h3>
+  <textarea id="descricao" placeholder="Descreva o que foi feito neste dia..."></textarea><br>
+  <button onclick="salvarDescricao('good')">✅ Bom</button>
+  <button onclick="salvarDescricao('bad')">❌ Ruim</button>
+  <button onclick="mostrarValor()">💰 Mostrar Valor</button>
+  <p id="valorDia" style="font-weight:bold; margin-top:10px;"></p>
+</div>
+
+<div id="resumo" class="resumo" style="display:none;"></div>
+
+<script>
+  let inicioServico = null;
+  let registros = JSON.parse(localStorage.getItem("registrosServico") || "{}");
+  let config = JSON.parse(localStorage.getItem("configServico") || "{}");
+
+  window.onload = () => {
+    if (config.inicio) {
+      document.getElementById("cliente").value = config.cliente || "";
+      document.getElementById("valorTotal").value = config.valor || 6000;
+      document.getElementById("inicio").value = config.inicio;
+      gerarCalendario();
+    }
+  };
+
+  function gerarCalendario() {
+    const cliente = document.getElementById("cliente").value.trim();
+    const valor = parseFloat(document.getElementById("valorTotal").value);
+    const inicio = document.getElementById("inicio").value;
+
+    if (!cliente || !valor || !inicio) {
+      alert("Preencha todos os campos!");
+      return;
+    }
+
+    config = { cliente, valor, inicio };
+    localStorage.setItem("configServico", JSON.stringify(config));
+
+    inicioServico = new Date(inicio);
+    const calendario = document.getElementById("calendar");
+    calendario.innerHTML = "";
+
+    const hoje = new Date();
+    const ano = hoje.getFullYear();
+    const mes = hoje.getMonth();
+    const ultimoDia = new Date(ano, mes + 1, 0);
+    const dias = ultimoDia.getDate();
+
+    document.getElementById("infoCliente").style.display = "block";
+    document.getElementById("infoCliente").innerHTML = `
+      <b>Cliente:</b> ${cliente}<br>
+      <b>Valor total:</b> R$ ${valor.toFixed(2)}<br>
+      <b>Início:</b> ${new Date(inicio).toLocaleDateString("pt-BR")}
+    `;
+
+    for (let i = 1; i <= dias; i++) {
+      const dia = document.createElement("div");
+      const dataAtual = new Date(ano, mes, i);
+      const dataStr = dataAtual.toISOString().split("T")[0];
+      dia.classList.add("day");
+
+      if (dataAtual.toDateString() === hoje.toDateString()) {
+        dia.classList.add("today");
+      }
+
+      if (dataAtual >= inicioServico) {
+        dia.classList.add("service");
+      }
+
+      if (registros[dataStr]?.status === "good") dia.classList.add("good");
+      if (registros[dataStr]?.status === "bad") dia.classList.add("bad");
+
+      dia.textContent = i;
+      dia.onclick = () => mostrarDetalhes(dataAtual);
+      calendario.appendChild(dia);
+    }
+
+    atualizarResumo();
+  }
+
+  function mostrarDetalhes(data) {
+    const detalhes = document.getElementById("details");
+    const dataSel = document.getElementById("dataSelecionada");
+    const textarea = document.getElementById("descricao");
+    const valorDia = document.getElementById("valorDia");
+
+    const dataStr = data.toISOString().split("T")[0];
+    detalhes.style.display = "block";
+    dataSel.textContent = `📅 ${data.toLocaleDateString("pt-BR")}`;
+    textarea.value = registros[dataStr]?.descricao || "";
+    textarea.dataset.data = dataStr;
+    valorDia.textContent = "";
+  }
+
+  function salvarDescricao(status) {
+    const textarea = document.getElementById("descricao");
+    const dataStr = textarea.dataset.data;
+    if (!dataStr) return;
+
+    registros[dataStr] = { descricao: textarea.value, status };
+    localStorage.setItem("registrosServico", JSON.stringify(registros));
+
+    alert(status === "good" ? "✅ Dia marcado como BOM!" : "❌ Dia marcado como RUIM!");
+    gerarCalendario();
+  }
+
+  function mostrarValor() {
+    const valorDia = document.getElementById("valorDia");
+    if (!config.valor) {
+      valorDia.textContent = "⚠️ Defina o valor total primeiro!";
+      return;
+    }
+    const diasTrabalho = 30;
+    const valorPorDia = config.valor / diasTrabalho;
+    valorDia.textContent = `💰 Valor deste dia: R$ ${valorPorDia.toFixed(2)}`;
+  }
+
+  function atualizarResumo() {
+    const resumo = document.getElementById("resumo");
+    let bons = 0;
+    let ruins = 0;
+    for (const d in registros) {
+      if (registros[d].status === "good") bons++;
+      if (registros[d].status === "bad") ruins++;
+    }
+
+    const valorDia = config.valor / 30;
+    const total = bons * valorDia;
+    resumo.style.display = "block";
+    resumo.innerHTML = `
+      ✅ Dias bons: ${bons} &nbsp; | &nbsp; ❌ Dias ruins: ${ruins}<br>
+      💰 Total acumulado: <b>R$ ${total.toFixed(2)}</b><br>
+      ${
+        total >= config.valor
+          ? `<span class="meta-ok">🎉 Meta de R$ ${config.valor.toFixed(2)} alcançada!</span>`
+          : `<span class="meta-pendente">⏳ Faltam R$ ${(config.valor - total).toFixed(2)} para alcançar R$ ${config.valor.toFixed(2)}.</span>`
+      }
+    `;
+  }
+</script>
+
+</body>
+</html>
